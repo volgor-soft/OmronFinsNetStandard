@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+<PropertyGroup>
+  <PackageId>OmronFinsNetStandard</PackageId>
+  <PackageVersion>1.0.0</PackageVersion>
+  <Authors>volkovskey</Authors>
+  <Company>volkovskey</Company>
+  <Description>An Omron FINS communication library for .NET Standard</Description>
+</PropertyGroup>
+
+</Project>
