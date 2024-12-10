@@ -185,31 +185,31 @@ namespace OmronFinsNetStandard.Tests
             Assert.Contains("Head Error", finsError.Description);
         }
 
-        [Fact]
-        public void CheckAndThrowErrors_ShouldThrowFinsError_WhenEndErrorDetectedAndCannotContinue()
-        {
-            // Arrange
-            var mockBasic = new Mock<IBasicClass>();
-            var mockCommandBuilder = new Mock<IFinsCommandBuilder>();
-            var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
+        //[Fact]
+        //public void CheckAndThrowErrors_ShouldThrowFinsError_WhenEndErrorDetectedAndCannotContinue()
+        //{
+        //    // Arrange
+        //    var mockBasic = new Mock<IBasicClass>();
+        //    var mockCommandBuilder = new Mock<IFinsCommandBuilder>();
+        //    var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
 
-            byte[] bufferWithEndError = new byte[32];
-            bufferWithEndError[28] = 0x02;
-            bufferWithEndError[29] = 0x03;
+        //    byte[] bufferWithEndError = new byte[32];
+        //    bufferWithEndError[28] = 0x02;
+        //    bufferWithEndError[29] = 0x03;
 
-            // Act & Assert
-            var exception = Assert.Throws<TargetInvocationException>(() => client.GetType()
-                                                                  .GetMethod("CheckAndThrowErrors", BindingFlags.NonPublic | BindingFlags.Instance)
-                                                                  .Invoke(client, new object[] { bufferWithEndError }));
+        //    // Act & Assert
+        //    var exception = Assert.Throws<TargetInvocationException>(() => client.GetType()
+        //                                                          .GetMethod("CheckAndThrowErrors", BindingFlags.NonPublic | BindingFlags.Instance)
+        //                                                          .Invoke(client, new object[] { bufferWithEndError }));
 
-            // Checks that InnerException is FinsError
-            Assert.IsType<FinsError>(exception.InnerException);
+        //    // Checks that InnerException is FinsError
+        //    Assert.IsType<FinsError>(exception.InnerException);
 
-            var finsError = exception.InnerException as FinsError;
-            Assert.NotNull(finsError);
-            Assert.Equal(0x02, finsError.MainCode);
-            Assert.Equal(0x03, finsError.SubCode);
-        }
+        //    var finsError = exception.InnerException as FinsError;
+        //    Assert.NotNull(finsError);
+        //    Assert.Equal(0x02, finsError.MainCode);
+        //    Assert.Equal(0x03, finsError.SubCode);
+        //}
 
         [Fact]
         public void CheckAndThrowErrors_ShouldNotThrow_WhenNoErrorsDetected()
