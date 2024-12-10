@@ -52,7 +52,7 @@ namespace OmronFinsNetStandard.Tests
                      .Callback<byte[]>(buffer => Buffer.BlockCopy(handshakeResponse, 0, buffer, 0, handshakeResponse.Length))
                      .ReturnsAsync(24);
 
-            var client = new EthernetPlcClient(0x00, 0x01, mockBasic.Object, mockCommandBuilder.Object);
+            var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
 
             // Act
             bool result = await client.ConnectAsync(plcIp, plcPort, timeout);
@@ -110,7 +110,7 @@ namespace OmronFinsNetStandard.Tests
 
             // Setup CheckAndThrowErrors (may not throw any exceptions)
 
-            var client = new EthernetPlcClient(0x00, 0x01, mockBasic.Object, mockCommandBuilder.Object);
+            var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
 
             // Act
             short bitState = await client.GetBitStateAsync(memory, address);
@@ -132,7 +132,7 @@ namespace OmronFinsNetStandard.Tests
             // Arrange
             var mockBasic = new Mock<IBasicClass>();
             var mockCommandBuilder = new Mock<IFinsCommandBuilder>();
-            var client = new EthernetPlcClient(0x00, 0x01, mockBasic.Object, mockCommandBuilder.Object);
+            var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
 
             byte[] bufferWithHeadError = new byte[32];
             bufferWithHeadError[11] = (byte)HeadErrorCode.InvalidHead;
@@ -161,7 +161,7 @@ namespace OmronFinsNetStandard.Tests
             // Arrange
             var mockBasic = new Mock<IBasicClass>();
             var mockCommandBuilder = new Mock<IFinsCommandBuilder>();
-            var client = new EthernetPlcClient(0x00, 0x01, mockBasic.Object, mockCommandBuilder.Object);
+            var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
 
             byte[] bufferWithEndError = new byte[32];
             bufferWithEndError[28] = 0x02;
@@ -187,7 +187,7 @@ namespace OmronFinsNetStandard.Tests
             // Arrange
             var mockBasic = new Mock<IBasicClass>();
             var mockCommandBuilder = new Mock<IFinsCommandBuilder>();
-            var client = new EthernetPlcClient(0x00, 0x01, mockBasic.Object, mockCommandBuilder.Object);
+            var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
 
             byte[] bufferWithoutErrors = new byte[32];
             // Fll codes are 0

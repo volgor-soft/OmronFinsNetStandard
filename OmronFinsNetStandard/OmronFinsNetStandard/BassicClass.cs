@@ -37,10 +37,8 @@ namespace OmronFinsNetStandard
         /// </summary>
         /// <param name="pcNode">The PC node address.</param>
         /// <param name="plcNode">The PLC node address.</param>
-        public BasicClass(byte pcNode, byte plcNode)
+        public BasicClass()
         {
-            PCNode = pcNode;
-            PLCNode = plcNode;
             _client = new TcpClient();
         }
 

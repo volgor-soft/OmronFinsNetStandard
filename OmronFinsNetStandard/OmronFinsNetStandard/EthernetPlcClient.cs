@@ -19,13 +19,11 @@ namespace OmronFinsNetStandard
         /// <summary>
         /// Initializes a new instance of the <see cref="EthernetPlcClient"/> class.
         /// </summary>
-        /// <param name="pcNode">The PC node address.</param>
-        /// <param name="plcNode">The PLC node address.</param>
-        public EthernetPlcClient(byte pcNode, byte plcNode, IBasicClass basic = null, IFinsCommandBuilder commandBuilder = null)
+        public EthernetPlcClient(IBasicClass basic = null, IFinsCommandBuilder commandBuilder = null)
         {
-            _basic = basic ?? new BasicClass(pcNode, plcNode);
+            _basic = basic ?? new BasicClass();
             _commandBuilder = commandBuilder ?? new FinsCommandBuilder(_basic);
-            Logger.Info("EthernetPlcClient initialized with PC Node: {0}, PLC Node: {1}.", pcNode, plcNode);
+            Logger.Info("EthernetPlcClient initialized.");
         }
 
 
