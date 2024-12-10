@@ -16,7 +16,12 @@
 	<RepositoryUrl>https://github.com/volkovskey/OmronFinsNetStandard</RepositoryUrl>
 	<Tags>Omron FINS PLC Ethernet</Tags>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
+	<ApplicationIcon>Icons\icon.ico</ApplicationIcon>
 </PropertyGroup>
+
+<ItemGroup>
+  <Content Include="Icons\icon.ico" />
+</ItemGroup>
 
 <ItemGroup>
   <None Include="..\..\README.md">
