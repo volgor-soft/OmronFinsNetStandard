@@ -85,17 +85,17 @@ namespace OmronFinsNetStandard
             catch (FinsCommunicationException ex)
             {
                 Logger.Fatal(ex, "Critical communication error while connecting to PLC at {0}:{1}.", ipAddress, port);
-                throw;
+                return false;
             }
             catch (FinsError ex)
             {
                 Logger.Error(ex, "FINS protocol error while connecting to PLC at {0}:{1}.", ipAddress, port);
-                throw;
+                return false;
             }
             catch (Exception ex)
             {
                 Logger.Fatal(ex, "Unexpected error while connecting to PLC at {0}:{1}.", ipAddress, port);
-                throw new FinsCommunicationException($"Unexpected error while connecting to PLC at {ipAddress}:{port}.", ex);
+                return false;
             }
         }
 

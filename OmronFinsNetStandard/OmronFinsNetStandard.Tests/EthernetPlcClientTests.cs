@@ -66,6 +66,36 @@ namespace OmronFinsNetStandard.Tests
             mockBasic.Verify(b => b.SendDataAsync(handshakeCommand), Times.Once);
             mockBasic.Verify(b => b.ReceiveDataAsync(It.IsAny<byte[]>()), Times.Once);
         }
+
+        [Fact]
+        public async Task ConnectAsync_ShouldReturnFalse_WhenConnectionIsFailure()
+        {
+            // Arrange
+            var mockBasic = new Mock<IBasicClass>();
+            var mockCommandBuilder = new Mock<IFinsCommandBuilder>();
+
+            string plcIp = "192.168.1.10";
+            int plcPort = 9600;
+            int timeout = 3000;
+
+            // Setup mock: Ping fails
+            mockBasic.Setup(b => b.PingCheckAsync(plcIp, timeout))
+                     .ReturnsAsync(false);
+
+            var client = new EthernetPlcClient(mockBasic.Object, mockCommandBuilder.Object);
+
+            // Act
+            bool result = await client.ConnectAsync(plcIp, plcPort, timeout);
+
+            // Assert
+            Assert.False(result);
+
+            // Verify that only PingCheckAsync was called
+            mockBasic.Verify(b => b.PingCheckAsync(plcIp, timeout), Times.Once);
+            mockBasic.Verify(b => b.ConnectAsync(It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            mockBasic.Verify(b => b.SendDataAsync(It.IsAny<byte[]>()), Times.Never);
+            mockBasic.Verify(b => b.ReceiveDataAsync(It.IsAny<byte[]>()), Times.Never);
+        }
         #endregion
 
         #region GetBitStateAsync
