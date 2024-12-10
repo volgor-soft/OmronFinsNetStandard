@@ -120,7 +120,6 @@ namespace OmronFinsNetStandard
             catch (Exception ex)
             {
                 Logger.Error(ex, "Error occurred while closing TCP connection to PLC.");
-                throw;
             }
         }
 
@@ -173,7 +172,7 @@ namespace OmronFinsNetStandard
             if (bytesRead < 31)
             {
                 Logger.Error("Incomplete bit read response from PLC. Expected at least 31 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, "Incomplete bit read response from PLC.");
+                return 0;
             }
 
             // Check for errors
@@ -209,7 +208,7 @@ namespace OmronFinsNetStandard
             if (bytesRead < 30)
             {
                 Logger.Error("Incomplete bit write response from PLC. Expected at least 30 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, "Incomplete bit write response from PLC.");
+                return;
             }
 
             // Check for errors
@@ -233,7 +232,7 @@ namespace OmronFinsNetStandard
             if (bytesRead < 34)
             {
                 Logger.Error("Incomplete real read response from PLC. Expected at least 34 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, "Incomplete real read response from PLC.");
+                return 0;
             }
 
             // Check for errors
@@ -271,7 +270,7 @@ namespace OmronFinsNetStandard
                 else
                 {
                     Logger.Error("End Error detected: {0}", endError);
-                    throw endError;
+                    return;
                 }
             }
         }
@@ -295,7 +294,7 @@ namespace OmronFinsNetStandard
             if (bytesRead < 30 + count * 2)
             {
                 Logger.Error("Incomplete read response from PLC. Expected at least {0} bytes, received {1} bytes.", 30 + count * 2, bytesRead);
-                throw new FinsError(0xFF, 0xFF, "Incomplete read response from PLC.");
+                return new short[0];
             }
 
             // Check for errors
@@ -342,7 +341,7 @@ namespace OmronFinsNetStandard
             if (bytesRead < 30)
             {
                 Logger.Error("Incomplete write response from PLC. Expected at least 30 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, "Incomplete write response from PLC.");
+                return;
             }
 
             // Check for errors

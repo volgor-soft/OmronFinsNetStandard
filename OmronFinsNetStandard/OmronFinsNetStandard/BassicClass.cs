@@ -2,6 +2,7 @@
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using NLog;
 using OmronFinsNetStandard.Errors;
 using OmronFinsNetStandard.Interfaces;
 
@@ -12,6 +13,8 @@ namespace OmronFinsNetStandard
     /// </summary>
     public class BasicClass : IBasicClass
     {
+        private static readonly ILogger Logger = LogManager.GetCurrentClassLogger();
+
         /// <summary>
         /// The TCP client used for the connection to the PLC.
         /// </summary>
@@ -60,7 +63,8 @@ namespace OmronFinsNetStandard
                 }
                 catch (PingException ex)
                 {
-                    throw new FinsPingException($"Ping to {ip} failed.", ex);
+                    Logger.Error(ex, $"Ping to {ip} failed.");
+                    return false;
                 }
             }
         }
@@ -81,7 +85,7 @@ namespace OmronFinsNetStandard
             }
             catch (SocketException ex)
             {
-                throw new FinsCommunicationException($"Failed to connect to PLC at {ipAddress}:{port}.", ex);
+                Logger.Error(ex, $"Failed to connect to PLC at {ipAddress}:{port}.");
             }
         }
 
@@ -104,7 +108,10 @@ namespace OmronFinsNetStandard
         public async Task SendDataAsync(byte[] data)
         {
             if (_stream == null)
-                throw new InvalidOperationException("Not connected to the PLC.");
+            {
+                Logger.Error("Not connected to the PLC.");
+                return;
+            }
 
             try
             {
@@ -112,7 +119,7 @@ namespace OmronFinsNetStandard
             }
             catch (SocketException ex)
             {
-                throw new FinsCommunicationException("Failed to send data to the PLC.", ex);
+                Logger.Error(ex, "Failed to send data to the PLC.");
             }
         }
 
@@ -126,7 +133,10 @@ namespace OmronFinsNetStandard
         public async Task<int> ReceiveDataAsync(byte[] buffer)
         {
             if (_stream == null)
-                throw new InvalidOperationException("Not connected to the PLC.");
+            {
+                Logger.Error("Not connected to the PLC.");
+                return -1;
+            }
 
             try
             {
@@ -136,8 +146,7 @@ namespace OmronFinsNetStandard
                 while (totalBytesRead < buffer.Length)
                 {
                     bytesRead = await _stream.ReadAsync(buffer, totalBytesRead, buffer.Length - totalBytesRead);
-                    if (bytesRead == 0)
-                        throw new FinsCommunicationException("Connection reset by peer during data reception.");
+                    if (bytesRead == 0) return totalBytesRead;
                     totalBytesRead += bytesRead;
                 }
 
@@ -145,7 +154,8 @@ namespace OmronFinsNetStandard
             }
             catch (SocketException ex)
             {
-                throw new FinsCommunicationException("Failed to receive data from the PLC.", ex);
+                Logger.Error(ex, "Failed to receive data from the PLC.");
+                return -1;
             }
         }
 
