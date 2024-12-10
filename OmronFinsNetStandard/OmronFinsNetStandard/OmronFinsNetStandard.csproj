@@ -13,4 +13,14 @@
   <Description>An Omron FINS communication library for .NET Standard</Description>
 </PropertyGroup>
 
+<ItemGroup>
+  <PackageReference Include="NLog" Version="5.3.4" />
+</ItemGroup>
+
+<ItemGroup>
+  <None Update="nlog.config">
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+  </None>
+</ItemGroup>
+
 </Project>
