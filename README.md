@@ -56,7 +56,7 @@ using OmronFinsNetStandard;
 using OmronFinsNetStandard.Enums;
 
 // Initialize the client with PC Node and PLC Node IDs
-var client = new EthernetPlcClient(pcNode: 0x00, plcNode: 0x01);
+var client = new EthernetPlcClient();
 
 // Connect to the PLC
 bool isConnected = await client.ConnectAsync("192.168.1.10", 9600, timeout: 3000);
@@ -141,12 +141,10 @@ Console.WriteLine("Disconnected from PLC.");
 #### Constructor
 
 ```
-public EthernetPlcClient(byte pcNode, byte plcNode, IBasicClass basic = null, IFinsCommandBuilder commandBuilder = null)
+public EthernetPlcClient(IBasicClass basic = null, IFinsCommandBuilder commandBuilder = null)
 ```
 
 - **Parameters:**
-  - `pcNode`: PC Node ID.
-  - `plcNode`: PLC Node ID.
   - `basic`: (Optional) Custom implementation of `IBasicClass` for dependency injection.
   - `commandBuilder`: (Optional) Custom implementation of `IFinsCommandBuilder` for dependency injection.
 
