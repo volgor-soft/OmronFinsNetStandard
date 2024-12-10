@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using NLog;
 using OmronFinsNetStandard.Enums;
 using OmronFinsNetStandard.Errors;
+using OmronFinsNetStandard.Interfaces;
 
 namespace OmronFinsNetStandard
 {
@@ -12,20 +13,21 @@ namespace OmronFinsNetStandard
     public class EthernetPlcClient : IDisposable
     {
         private static readonly ILogger Logger = LogManager.GetCurrentClassLogger();
-        private readonly BasicClass _basic;
-        private readonly FinsCommandBuilder _commandBuilder;
+        private readonly IBasicClass _basic;
+        private readonly IFinsCommandBuilder _commandBuilder;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="EthernetPlcClient"/> class.
         /// </summary>
         /// <param name="pcNode">The PC node address.</param>
         /// <param name="plcNode">The PLC node address.</param>
-        public EthernetPlcClient(byte pcNode, byte plcNode)
+        public EthernetPlcClient(byte pcNode, byte plcNode, IBasicClass basic = null, IFinsCommandBuilder commandBuilder = null)
         {
-            _basic = new BasicClass(pcNode, plcNode);
-            _commandBuilder = new FinsCommandBuilder(_basic);
-            Logger.Info("EthernetPlcClient initialized with PC Node: {0}, PLC Node: {1}", pcNode, plcNode);
+            _basic = basic ?? new BasicClass(pcNode, plcNode);
+            _commandBuilder = commandBuilder ?? new FinsCommandBuilder(_basic);
+            Logger.Info("EthernetPlcClient initialized with PC Node: {0}, PLC Node: {1}.", pcNode, plcNode);
         }
+
 
         /// <summary>
         /// Establishes a TCP connection to the PLC.

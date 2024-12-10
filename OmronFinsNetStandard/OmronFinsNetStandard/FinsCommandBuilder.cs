@@ -2,21 +2,22 @@
 using System.Threading.Tasks;
 using OmronFinsNetStandard.Enums;
 using OmronFinsNetStandard.Errors;
+using OmronFinsNetStandard.Interfaces;
 
 namespace OmronFinsNetStandard
 {
     /// <summary>
     /// Provides methods to generate FINS commands for reading and writing data to the PLC.
     /// </summary>
-    internal class FinsCommandBuilder
+    public class FinsCommandBuilder : IFinsCommandBuilder
     {
-        private readonly BasicClass _basic;
+        private readonly IBasicClass _basic;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FinsCommandBuilder"/> class.
         /// </summary>
         /// <param name="basic">An instance of <see cref="BasicClass"/> for network operations.</param>
-        public FinsCommandBuilder(BasicClass basic)
+        public FinsCommandBuilder(IBasicClass basic)
         {
             _basic = basic ?? throw new ArgumentNullException(nameof(basic));
         }

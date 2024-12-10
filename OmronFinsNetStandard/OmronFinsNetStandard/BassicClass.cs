@@ -3,13 +3,14 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using OmronFinsNetStandard.Errors;
+using OmronFinsNetStandard.Interfaces;
 
 namespace OmronFinsNetStandard
 {
     /// <summary>
     /// Provides basic functionalities for interacting with the PLC, including connection management, sending, and receiving data.
     /// </summary>
-    internal class BasicClass : IDisposable
+    public class BasicClass : IBasicClass
     {
         /// <summary>
         /// The TCP client used for the connection to the PLC.
