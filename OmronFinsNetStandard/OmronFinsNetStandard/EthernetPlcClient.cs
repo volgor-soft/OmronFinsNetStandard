@@ -35,7 +35,7 @@ namespace OmronFinsNetStandard
         /// <param name="timeout">The timeout in milliseconds.</param>
         /// <returns>A task that represents the asynchronous connect operation.</returns>
         /// <exception cref="FinsCommunicationException">Thrown when the connection fails.</exception>
-        public async Task<bool> ConnectAsync(string ipAddress, int port, int timeout = 3000)
+        public async Task<bool> ConnectAsync(string ipAddress, int port, int timeout = 300)
         {
             Logger.Info("Starting connection process to PLC at {0}:{1} with timeout {2}ms.", ipAddress, port, timeout);
 
@@ -239,7 +239,7 @@ namespace OmronFinsNetStandard
             CheckAndThrowErrors(buffer);
 
             // Data parsing
-            byte[] temp = new byte[] { buffer[31], buffer[30], buffer[33], buffer[32] }; // Обмін байтів для правильного порядку
+            byte[] temp = new byte[] { buffer[31], buffer[30], buffer[33], buffer[32] }; // Right order
             float reData = BitConverter.ToSingle(temp, 0);
             return reData;
         }
@@ -256,11 +256,11 @@ namespace OmronFinsNetStandard
             if (headError != HeadErrorCode.Success)
             {
                 Logger.Error("Head Error detected: {0}. Error Code: {1:X2}", headError, buffer[12]);
-                throw new FinsError(buffer[11], buffer[12], $"Head Error: {headError}");
+                throw new FinsError(mainCode: buffer[11], subCode: buffer[12], $"Head Error: {headError}");
             }
 
             // Checks for end error
-            FinsError endError = ErrorCode.CheckEndCode(buffer[28], buffer[29]);
+            FinsError endError = ErrorCode.CheckEndCode(mainCode: buffer[28], subCode: buffer[29]);
             if (endError != null)
             {
                 if (endError.CanContinue)
@@ -286,7 +286,7 @@ namespace OmronFinsNetStandard
         /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task<short[]> ReadWordsAsync(PlcMemory memory, ushort address, ushort count)
         {
-            byte[] command = _commandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, (short)count);
+            byte[] command = _commandBuilder.FinsCmd(rw: ReadOrWrite.Read, mr: memory, mt: MemoryType.Word, ch: (short)address, offset: 0, cnt: (short)count);
             await _basic.SendDataAsync(command);
 
             byte[] buffer = new byte[30 + count * 2];
