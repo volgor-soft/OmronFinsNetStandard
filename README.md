@@ -19,7 +19,6 @@
 - [Logging](#logging)
   - [Enabling Logs in NLog](#enabling-logs-in-nlog)
 - [API Reference](#api-reference)
-- [Unit Testing](#unit-testing)
 - [Contributing](#contributing)
 - [License](#license)
 - [Contact](#contact)
@@ -33,7 +32,6 @@
 - **Asynchronous Operations:** Perform non-blocking I/O operations when interacting with the PLC.
 - **Robust Error Handling:** The library throws `FinsError` exceptions when communication issues or PLC-side errors occur, allowing you to handle these gracefully.
 - **Logging with NLog:** Integrated logging uses the popular NLog framework for diagnostics and audit trails.
-- **Unit Tested:** Reliability is ensured through comprehensive unit tests using xUnit and Moq.
 - **Dependency Injection-Friendly:** Easily integrate into DI containers for more modular and testable code.
 
 ## Installation
@@ -237,16 +235,6 @@ public EthernetPlcClient()
 
 - `override string Message`  
   A descriptive error message.
-
-## Unit Testing
-
-The project includes a suite of unit tests to ensure reliability and correctness.  
-To run tests:
-
-```bash
-cd OmronFinsNetStandard.Tests
-dotnet test
-```
 
 ## Contributing
 
