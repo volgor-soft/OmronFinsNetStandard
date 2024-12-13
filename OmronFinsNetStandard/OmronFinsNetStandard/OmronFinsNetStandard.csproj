@@ -8,7 +8,7 @@
 
 <PropertyGroup>
   <PackageId>OmronFinsNetStandard</PackageId>
-  <PackageVersion>1.0.4</PackageVersion>
+  <PackageVersion>1.1.0</PackageVersion>
   <Authors>volkovskey</Authors>
   <Company>volkovskey</Company>
   <Description>An Omron FINS communication library for .NET Standard</Description>
@@ -17,9 +17,9 @@
 	<Tags>Omron FINS PLC Ethernet</Tags>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
 	<ApplicationIcon>Icons\icon.ico</ApplicationIcon>
-	<AssemblyVersion>1.0.4.0</AssemblyVersion>
-	<FileVersion>1.0.4.0</FileVersion>
-	<PackageReleaseNotes>Fixed logs and removed throw exceptions</PackageReleaseNotes>
+	<AssemblyVersion>1.1.0.0</AssemblyVersion>
+	<FileVersion>1.1.0.0</FileVersion>
+	<PackageReleaseNotes>Updates exceptions and readme</PackageReleaseNotes>
 </PropertyGroup>
 
 <ItemGroup>

@@ -2,33 +2,21 @@
 using System.Threading.Tasks;
 using OmronFinsNetStandard.Enums;
 using OmronFinsNetStandard.Errors;
-using OmronFinsNetStandard.Interfaces;
 
 namespace OmronFinsNetStandard
 {
     /// <summary>
     /// Provides methods to generate FINS commands for reading and writing data to the PLC.
     /// </summary>
-    public class FinsCommandBuilder : IFinsCommandBuilder
+    class FinsCommandBuilder
     {
-        private readonly IBasicClass _basic;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="FinsCommandBuilder"/> class.
-        /// </summary>
-        /// <param name="basic">An instance of <see cref="BasicClass"/> for network operations.</param>
-        public FinsCommandBuilder(IBasicClass basic)
-        {
-            _basic = basic ?? throw new ArgumentNullException(nameof(basic));
-        }
-
         /// <summary>
         /// Retrieves the memory area code based on the specified <see cref="PlcMemory"/> and <see cref="MemoryType"/>.
         /// </summary>
         /// <param name="memory">The PLC memory area.</param>
         /// <param name="memoryType">The type of memory access (bit or word).</param>
         /// <returns>The corresponding memory area code as a byte.</returns>
-        private byte GetMemoryCode(PlcMemory memory, MemoryType memoryType)
+        private static byte GetMemoryCode(PlcMemory memory, MemoryType memoryType)
         {
             return (byte)(memoryType == MemoryType.Bit
                 ? memory switch
@@ -55,7 +43,7 @@ namespace OmronFinsNetStandard
         /// Generates a handshake command to establish a connection with the PLC.
         /// </summary>
         /// <returns>A byte array representing the handshake command.</returns>
-        public byte[] HandShake()
+        public static byte[] HandShake()
         {
             byte[] array = new byte[20];
             array[0] = 0x46; // 'F'
@@ -92,11 +80,11 @@ namespace OmronFinsNetStandard
         /// <param name="rw">The read or write operation type.</param>
         /// <param name="mr">The PLC memory area type.</param>
         /// <param name="mt">The memory access type (bit or word).</param>
-        /// <param name="ch">The starting address.</param>
+        /// <param name="startAdress">The starting address.</param>
         /// <param name="offset">The bit offset (for bit access) or 0 (for word access).</param>
-        /// <param name="cnt">The number of items to read or write.</param>
+        /// <param name="count">The number of items to read or write.</param>
         /// <returns>A byte array representing the FINS command.</returns>
-        public byte[] FinsCmd(ReadOrWrite rw, PlcMemory mr, MemoryType mt, short ch, short offset, short cnt)
+        public static byte[] FinsCmd(ReadOrWrite rw, PlcMemory mr, MemoryType mt, short startAdress, short offset, short count)
         {
             // Get the command length
             // I haven't read enough of the documentation to fully implement this part.
@@ -123,8 +111,8 @@ namespace OmronFinsNetStandard
             {
                 if (mt == MemoryType.Word)
                 {
-                    array[6] = (byte)((cnt * 2 + 26) / 256);
-                    array[7] = (byte)((cnt * 2 + 26) % 256);
+                    array[6] = (byte)((count * 2 + 26) / 256);
+                    array[7] = (byte)((count * 2 + 26) % 256);
                 }
                 else
                 {
@@ -151,10 +139,10 @@ namespace OmronFinsNetStandard
             array[18] = 0x02; // GCT
             array[19] = 0x00; // DNA
 
-            array[20] = _basic.PLCNode; // DA1
+            array[20] = BasicClass.PLCNode; // DA1
             array[21] = 0x00; // DA2, CPU unit
             array[22] = 0x00; // SNA, local network
-            array[23] = _basic.PCNode; // SA1
+            array[23] = BasicClass.PCNode; // SA1
 
             array[24] = 0x00; // SA2, CPU unit
             array[25] = 0xFF; // SID
@@ -173,12 +161,12 @@ namespace OmronFinsNetStandard
 
             // Memory address
             array[28] = GetMemoryCode(mr, mt);
-            array[29] = (byte)(ch / 256); // Address high byte
-            array[30] = (byte)(ch % 256); // Address low byte
-            array[31] = (byte)offset; // Bit offset або 0 для word
+            array[29] = (byte)(startAdress / 256); // Address high byte
+            array[30] = (byte)(startAdress % 256); // Address low byte
+            array[31] = (byte)offset; // Bit offset or 0 for word
 
-            array[32] = (byte)(cnt / 256); // Count high byte
-            array[33] = (byte)(cnt % 256); // Count low byte
+            array[32] = (byte)(count / 256); // Count high byte
+            array[33] = (byte)(count % 256); // Count low byte
 
             //// Additional data for write operation
             //if (rw == ReadOrWrite.Write && mt == MemoryType.Word && cnt > 0)
