@@ -4,45 +4,48 @@ using System.Net.Sockets;
 using System.Threading.Tasks;
 using NLog;
 using OmronFinsNetStandard.Errors;
-using OmronFinsNetStandard.Interfaces;
 
 namespace OmronFinsNetStandard
 {
     /// <summary>
     /// Provides basic functionalities for interacting with the PLC, including connection management, sending, and receiving data.
     /// </summary>
-    public class BasicClass : IBasicClass
+    class BasicClass
     {
         private static readonly ILogger Logger = LogManager.GetCurrentClassLogger();
 
+        private static TcpClient _client;
         /// <summary>
         /// The TCP client used for the connection to the PLC.
         /// </summary>
-        private TcpClient _client;
+        public static TcpClient Client
+        {
+            set => _client = value;
+        }
 
         /// <summary>
         /// The network stream used for sending and receiving data.
         /// </summary>
-        private NetworkStream _stream;
+        private static NetworkStream _stream;
 
+        private static byte _pcNode;
         /// <summary>
         /// The PC node address.
         /// </summary>
-        public byte PCNode { get; set; }
+        public static byte PCNode
+        {
+            get => _pcNode;
+            set => _pcNode = value;
+        }
 
+        private static byte _plcNode;
         /// <summary>
         /// The PLC node address.
         /// </summary>
-        public byte PLCNode { get; set; }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BasicClass"/> class.
-        /// </summary>
-        /// <param name="pcNode">The PC node address.</param>
-        /// <param name="plcNode">The PLC node address.</param>
-        public BasicClass()
+        public static byte PLCNode
         {
-            _client = new TcpClient();
+            get => _plcNode;
+            set => _plcNode = value;
         }
 
         /// <summary>
@@ -52,7 +55,7 @@ namespace OmronFinsNetStandard
         /// <param name="timeout">The timeout in milliseconds.</param>
         /// <returns>A task that represents the asynchronous operation. The task result contains <c>true</c> if the ping was successful; otherwise, <c>false</c>.</returns>
         /// <exception cref="FinsPingException">Thrown when the ping operation fails.</exception>
-        public async Task<bool> PingCheckAsync(string ip, int timeout)
+        public static async Task<bool> PingCheckAsync(string ip, int timeout)
         {
             using (var ping = new Ping())
             {
@@ -76,7 +79,7 @@ namespace OmronFinsNetStandard
         /// <param name="port">The port number for the connection.</param>
         /// <returns>A task that represents the asynchronous connect operation.</returns>
         /// <exception cref="FinsCommunicationException">Thrown when the connection fails.</exception>
-        public async Task ConnectAsync(string ipAddress, int port)
+        public static async Task ConnectAsync(string ipAddress, int port)
         {
             try
             {
@@ -92,7 +95,7 @@ namespace OmronFinsNetStandard
         /// <summary>
         /// Disconnects from the PLC.
         /// </summary>
-        public void Disconnect()
+        public static void Disconnect()
         {
             _stream?.Close();
             _client?.Close();
@@ -105,7 +108,7 @@ namespace OmronFinsNetStandard
         /// <returns>A task that represents the asynchronous send operation.</returns>
         /// <exception cref="InvalidOperationException">Thrown when not connected to the PLC.</exception>
         /// <exception cref="FinsCommunicationException">Thrown when sending data fails.</exception>
-        public async Task SendDataAsync(byte[] data)
+        public static async Task SendDataAsync(byte[] data)
         {
             if (_stream == null)
             {
@@ -130,7 +133,7 @@ namespace OmronFinsNetStandard
         /// <returns>A task that represents the asynchronous receive operation. The task result contains the number of bytes read.</returns>
         /// <exception cref="InvalidOperationException">Thrown when not connected to the PLC.</exception>
         /// <exception cref="FinsCommunicationException">Thrown when receiving data fails.</exception>
-        public async Task<int> ReceiveDataAsync(byte[] buffer)
+        public static async Task<int> ReceiveDataAsync(byte[] buffer)
         {
             if (_stream == null)
             {
@@ -157,16 +160,6 @@ namespace OmronFinsNetStandard
                 Logger.Error(ex, "Failed to receive data from the PLC.");
                 return -1;
             }
-        }
-
-        /// <summary>
-        /// Releases all resources used by the <see cref="BasicClass"/>.
-        /// </summary>
-        public void Dispose()
-        {
-            Disconnect();
-            _stream?.Dispose();
-            _client?.Dispose();
         }
     }
 }
