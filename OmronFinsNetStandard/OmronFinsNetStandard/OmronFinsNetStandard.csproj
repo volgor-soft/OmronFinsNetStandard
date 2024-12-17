@@ -17,8 +17,8 @@
 	<Tags>Omron FINS PLC Ethernet</Tags>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
 	<ApplicationIcon>Icons\icon.ico</ApplicationIcon>
-	<AssemblyVersion>1.1.0.0</AssemblyVersion>
-	<FileVersion>1.1.0.0</FileVersion>
+	<AssemblyVersion>1.1.0.*</AssemblyVersion>
+	<FileVersion>1.1.0.*</FileVersion>
 	<PackageReleaseNotes>Updates exceptions and readme</PackageReleaseNotes>
 </PropertyGroup>
 
