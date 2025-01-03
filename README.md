@@ -1,6 +1,6 @@
 # OmronFinsNetStandard
 
-[![BUILD](https://github.com/volkovskey/OmronFinsNetStandard/actions/workflows/dotnet.yml/badge.svg)](BUILD)
+[![BUILD](https://github.com/volgor-soft/OmronFinsNetStandard/actions/workflows/dotnet.yml/badge.svg)](BUILD)
 [![NuGet](https://img.shields.io/nuget/v/OmronFinsNetStandard.svg)](https://www.nuget.org/packages/OmronFinsNetStandard/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
