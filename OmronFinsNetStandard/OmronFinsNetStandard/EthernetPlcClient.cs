@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Net.Sockets;
 using System.Threading.Tasks;
 using NLog;
 using OmronFinsNetStandard.Enums;
@@ -7,294 +6,187 @@ using OmronFinsNetStandard.Errors;
 
 namespace OmronFinsNetStandard
 {
-    /// <summary>
-    /// Provides methods to manage Ethernet TCP connections to the PLC and perform read/write operations.
-    /// </summary>
     public class EthernetPlcClient : IDisposable
     {
         private static readonly ILogger Logger = LogManager.GetCurrentClassLogger();
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="EthernetPlcClient"/> class.
-        /// </summary>
+        private FinsConnection _connection;
+        private string _ipAddress;
+        private int _port;
+        private bool _isDisposed = false;
+
         public EthernetPlcClient()
         {
-            BasicClass.Client = new TcpClient();
             Logger.Debug("EthernetPlcClient initialized.");
         }
 
-
-        /// <summary>
-        /// Establishes a TCP connection to the PLC.
-        /// </summary>
-        /// <param name="ipAddress">The IP address of the PLC.</param>
-        /// <param name="port">The port number for the connection.</param>
-        /// <param name="timeout">The timeout in milliseconds.</param>
-        /// <returns>A task that represents the asynchronous connect operation.</returns>
         public async Task<bool> ConnectAsync(string ipAddress, int port, int timeout = 300)
         {
-            Logger.Debug("Starting connection process to PLC at {0}:{1} with timeout {2}ms.", ipAddress, port, timeout);
+            _ipAddress = ipAddress;
+            _port = port;
+
+            Logger.Debug("Requesting connection to PLC at {0}:{1}", ipAddress, port);
+
+            // 1. Get connection from pool (Thread safe)
+            _connection = ConnectionManager.GetConnection(ipAddress, port);
+
             try
             {
-                Logger.Debug("Performing ping check to {0} with timeout {1}ms.", ipAddress, timeout);
-                bool isPingSuccessful = await BasicClass.PingCheckAsync(ipAddress, timeout);
-                if (!isPingSuccessful)
+                // 2. Establish physical connection if not already connected
+                // Note: If another thread connected it 1ms ago, this returns true immediately.
+                bool connected = await _connection.ConnectPhysicalAsync(timeout);
+                if (!connected)
                 {
-                    throw new FinsCommunicationException($"Ping to PLC at {ipAddress} failed.");
+                    // Failed to connect physically. Release the reference we just took.
+                    ConnectionManager.ReleaseConnection(_ipAddress, _port);
+                    _connection = null;
+                    throw new FinsCommunicationException($"Could not establish physical connection to {ipAddress}");
                 }
-                Logger.Debug("Ping to PLC at {0} successful.", ipAddress);
 
-                await BasicClass.ConnectAsync(ipAddress, port);
-                Logger.Debug("TCP connection to PLC at {0}:{1} established successfully.", ipAddress, port);
+                // 3. Handshake Logic
+                // IMPORTANT: We only do handshake if we haven't determined Nodes yet.
+                // Or if we want to ensure FINS level is up. 
+                // Since this is a shared connection, we check if Nodes are already set (meaning handshake was done).
 
-                await BasicClass.SendDataAsync(FinsCommandBuilder.HandShake());
-                Logger.Debug("Handshake command sent to PLC.");
+                if (_connection.PCNode != 0 && _connection.PLCNode != 0)
+                {
+                    Logger.Debug("Connection reused. Skipping Handshake. Nodes: PC={0}, PLC={1}", _connection.PCNode, _connection.PLCNode);
+                    return true;
+                }
 
-                byte[] buffer = new byte[24];
-                int bytesRead = await BasicClass.ReceiveDataAsync(buffer);
+                // Perform Handshake inside the Lock
+                // We construct a specific specialized lock usage or use Transceive
+                Logger.Debug("Performing FINS Handshake...");
+
+                // We use TransceiveAsync to ensure atomic send/receive on the shared socket
+                byte[] responseBuffer = new byte[24];
+                int bytesRead = await _connection.TransceiveAsync(FinsCommandBuilder.HandShake(), responseBuffer);
 
                 if (bytesRead < 24)
                 {
-                    Logger.Error("Incomplete handshake response from PLC. Expected at least 24 bytes, received {0} bytes.", bytesRead);
-                    throw new FinsError(0xFF, 0xFF, "Incomplete handshake response from PLC.");
+                    throw new FinsError(0xFF, 0xFF, "Incomplete handshake response.");
                 }
 
-                if (buffer[15] != 0)
+                if (responseBuffer[15] != 0)
                 {
-                    Logger.Error("Handshake failed with error code: {0:X2}{1:X2}.", buffer[15], buffer[16]);
-                    throw new FinsError(buffer[15], buffer[16], "Handshake failed with error code.");
+                    throw new FinsError(responseBuffer[15], responseBuffer[16], "Handshake failed.");
                 }
 
-                BasicClass.PCNode = buffer[19];
-                BasicClass.PLCNode = buffer[23];
-                Logger.Debug("PLC Nodes set successfully. PC Node: {0}, PLC Node: {1}.", BasicClass.PCNode, BasicClass.PLCNode);
+                // Set nodes on the shared connection object
+                _connection.PCNode = responseBuffer[19];
+                _connection.PLCNode = responseBuffer[23];
 
-                Logger.Info("Connection to PLC at {0}:{1} established successfully.", ipAddress, port);
+                Logger.Info("Handshake successful. Nodes set: PC={0}, PLC={1}", _connection.PCNode, _connection.PLCNode);
                 return true;
             }
-            catch (FinsCommunicationException ex)
-            {
-                Logger.Fatal(ex, "Critical communication error while connecting to PLC at {0}:{1}.", ipAddress, port);
-                return false;
-            }
-            catch (FinsError ex)
-            {
-                Logger.Error(ex, "FINS protocol error while connecting to PLC at {0}:{1}.", ipAddress, port);
-                return false;
-            }
             catch (Exception ex)
             {
-                Logger.Fatal(ex, "Unexpected error while connecting to PLC at {0}:{1}.", ipAddress, port);
+                Logger.Error(ex, "Connection process failed.");
+                // If we failed, ensure we release the pool reference
+                if (_connection != null)
+                {
+                    ConnectionManager.ReleaseConnection(_ipAddress, _port);
+                    _connection = null;
+                }
+
                 return false;
             }
         }
 
-
-        /// <summary>
-        /// Closes the TCP connection to the PLC.
-        /// </summary>
-        /// <returns>A task that represents the asynchronous close operation.</returns>
         public async Task CloseAsync()
         {
-            Logger.Debug("Starting to close TCP connection to PLC.");
+            if (_connection == null || _isDisposed) return;
 
-            try
+            Logger.Debug("Releasing connection reference for {0}:{1}", _ipAddress, _port);
+            await Task.Run(() =>
             {
-                Logger.Debug("Executing disconnect operation.");
-                await Task.Run(() =>
-                {
-                    BasicClass.Disconnect();
-                });
-                Logger.Info("TCP connection to PLC closed successfully.");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Error occurred while closing TCP connection to PLC.");
-            }
+                ConnectionManager.ReleaseConnection(_ipAddress, _port);
+                _connection = null;
+            });
+            _isDisposed = true;
         }
 
+        // --- Data Operations ---
+        // Helper to get nodes for command builder
+        private (byte pc, byte plc) GetNodes()
+        {
+            if (_connection == null || !_connection.IsConnected)
+                throw new InvalidOperationException("Client is not connected.");
+            return (_connection.PCNode, _connection.PLCNode);
+        }
 
-        /// <summary>
-        /// Reads a single word from the PLC asynchronously.
-        /// </summary>
-        /// <param name="memory">The PLC memory area to read from.</param>
-        /// <param name="address">The starting address.</param>
-        /// <returns>A task that represents the asynchronous read operation. The task result contains the read word.</returns>
-        /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task<short> ReadWordAsync(PlcMemory memory, ushort address)
         {
-            short[] result = await ReadWordsAsync(memory, address, 1);
-            return result[0];
+            var res = await ReadWordsAsync(memory, address, 1);
+            return res[0];
         }
 
-        /// <summary>
-        /// Writes a single word to the PLC asynchronously.
-        /// </summary>
-        /// <param name="memory">The PLC memory area to write to.</param>
-        /// <param name="address">The starting address.</param>
-        /// <param name="data">The word to write.</param>
-        /// <returns>A task that represents the asynchronous write operation.</returns>
-        /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task WriteWordAsync(PlcMemory memory, ushort address, short data)
         {
-            short[] dataArray = new short[] { data };
-            await WriteWordsAsync(memory, address, dataArray);
+            await WriteWordsAsync(memory, address, new short[] { data });
         }
 
-        /// <summary>
-        /// Reads the state of a single bit from the PLC asynchronously.
-        /// </summary>
-        /// <param name="memory">The PLC memory area to read from.</param>
-        /// <param name="address">The bit address in the format "000.00" (e.g., "100.5").</param>
-        /// <returns>A task that represents the asynchronous read operation. The task result contains the bit state (0 or 1).</returns>
-        /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task<short> GetBitStateAsync(PlcMemory memory, string address)
         {
-            short bs = 0;
-            byte[] buffer = new byte[31]; // Buffer size can configure to necessary size
+            var nodes = GetNodes();
             short cnInt = short.Parse(address.Split('.')[0]);
             short cnBit = short.Parse(address.Split('.')[1]);
 
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Bit, cnInt, cnBit, 1);
-            await BasicClass.SendDataAsync(command);
+            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Bit, cnInt, cnBit, 1, nodes.plc, nodes.pc);
+            byte[] buffer = new byte[31];
 
-            int bytesRead = await BasicClass.ReceiveDataAsync(buffer);
-            if (bytesRead < 31)
-            {
-                Logger.Error("Incomplete bit read response from PLC. Expected at least 31 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, $"Incomplete bit read response from PLC. Expected at least 31 bytes, received {bytesRead} bytes.");
-            }
+            int bytesRead = await _connection.TransceiveAsync(command, buffer);
 
-            // Check for errors
-            CheckAndThrowErrors(buffer);
+            ValidateResponse(buffer, bytesRead, 31);
 
-            // Data parsing
-            bs = (short)buffer[30];
-            return bs;
+            return (short)buffer[30];
         }
 
-        /// <summary>
-        /// Sets the state of a single bit in the PLC asynchronously.
-        /// </summary>
-        /// <param name="memory">The PLC memory area to write to.</param>
-        /// <param name="address">The bit address in the format "000.00" (e.g., "100.5").</param>
-        /// <param name="state">The desired bit state (0 or 1).</param>
-        /// <returns>A task that represents the asynchronous write operation.</returns>
-        /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task SetBitStateAsync(PlcMemory memory, string address, BitState state)
         {
-            byte[] buffer = new byte[30];
+            var nodes = GetNodes();
             short cnInt = short.Parse(address.Split('.')[0]);
             short cnBit = short.Parse(address.Split('.')[1]);
 
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Bit, cnInt, cnBit, 1);
+            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Bit, cnInt, cnBit, 1, nodes.plc, nodes.pc);
+
+            // Append data (BitState)
             byte[] fullCommand = new byte[command.Length + 1];
             Buffer.BlockCopy(command, 0, fullCommand, 0, command.Length);
             fullCommand[command.Length] = (byte)state;
 
-            await BasicClass.SendDataAsync(fullCommand);
+            byte[] buffer = new byte[30];
+            int bytesRead = await _connection.TransceiveAsync(fullCommand, buffer);
 
-            int bytesRead = await BasicClass.ReceiveDataAsync(buffer);
-            if (bytesRead < 30)
-            {
-                Logger.Error("Incomplete bit write response from PLC. Expected at least 30 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, $"Incomplete bit write response from PLC. Expected at least 30 bytes, received {bytesRead} bytes.");
-            }
-
-            // Check for errors
-            CheckAndThrowErrors(buffer);
+            ValidateResponse(buffer, bytesRead, 30);
         }
 
-        /// <summary>
-        /// Reads a single real (float) value from the PLC asynchronously.
-        /// </summary>
-        /// <param name="memory">The PLC memory area to read from.</param>
-        /// <param name="address">The starting address (reads two consecutive words).</param>
-        /// <returns>A task that represents the asynchronous read operation. The task result contains the read float value.</returns>
-        /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task<float> ReadRealAsync(PlcMemory memory, ushort address)
         {
-            byte[] buffer = new byte[34]; // 30 + 4 (2 words)
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, 2);
-            await BasicClass.SendDataAsync(command);
+            var nodes = GetNodes();
+            byte[] buffer = new byte[34];
+            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, 2, nodes.plc, nodes.pc);
 
-            int bytesRead = await BasicClass.ReceiveDataAsync(buffer);
-            if (bytesRead < 34)
-            {
-                Logger.Error("Incomplete real read response from PLC. Expected at least 34 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, $"Incomplete real read response from PLC. Expected at least 34 bytes, received {bytesRead} bytes.");
-            }
+            int bytesRead = await _connection.TransceiveAsync(command, buffer);
+            ValidateResponse(buffer, bytesRead, 34);
 
-            // Check for errors
-            CheckAndThrowErrors(buffer);
-
-            // Data parsing
-            byte[] temp = new byte[] { buffer[31], buffer[30], buffer[33], buffer[32] }; // Right order
-            float reData = BitConverter.ToSingle(temp, 0);
-            return reData;
+            byte[] temp = new byte[] { buffer[31], buffer[30], buffer[33], buffer[32] };
+            return BitConverter.ToSingle(temp, 0);
         }
 
-        /// <summary>
-        /// Checks for errors in the response buffer and throws appropriate exceptions.
-        /// </summary>
-        /// <param name="buffer">The response buffer from the PLC.</param>
-        /// <exception cref="FinsError">Thrown when an error is detected in the response.</exception>
-        private void CheckAndThrowErrors(byte[] buffer)
-        {
-            // Checks for head error
-            HeadErrorCode headError = ErrorCode.CheckHeadError(buffer[11]);
-            if (headError == HeadErrorCode.CommandNotSupported)
-            {
-                headError = ErrorCode.CheckHeadError(buffer[15]);
-                if (headError != HeadErrorCode.Success)
-                {
-                    Logger.Error("Head Error detected: {0}. Error Code: {1} or {2}", headError, buffer[11], buffer[15]);
-                    throw new FinsError(mainCode: buffer[11], subCode: buffer[15], $"Head Error: {headError}");
-                }
-            }
-
-            // Checks for end error
-            FinsError endError = ErrorCode.CheckEndCode(mainCode: buffer[28], subCode: buffer[29]);
-            if (endError != null)
-            {
-                if (endError.CanContinue)
-                {
-                    Logger.Warn("End Error detected but operation can continue: {0}", endError);
-                }
-                else
-                {
-                    Logger.Error("End Error detected: {0}", endError);
-                    throw new FinsError(endError.MainCode, endError.SubCode, $"End Error: {endError}");
-                }
-            }
-        }
-
-
-        /// <summary>
-        /// Reads multiple words from the PLC asynchronously.
-        /// </summary>
-        /// <param name="memory">The PLC memory area to read from.</param>
-        /// <param name="address">The starting address.</param>
-        /// <param name="count">The number of words to read.</param>
-        /// <returns>A task that represents the asynchronous read operation. The task result contains the read data.</returns>
-        /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task<short[]> ReadWordsAsync(PlcMemory memory, ushort address, ushort count)
         {
-            byte[] command = FinsCommandBuilder.FinsCmd(rw: ReadOrWrite.Read, mr: memory, mt: MemoryType.Word, startAdress: (short)address, offset: 0, count: (short)count);
-            await BasicClass.SendDataAsync(command);
+            var nodes = GetNodes();
+            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, (short)count, nodes.plc,
+                nodes.pc);
 
-            byte[] buffer = new byte[30 + count * 2];
-            int bytesRead = await BasicClass.ReceiveDataAsync(buffer);
-            if (bytesRead < 30 + count * 2)
-            {
-                Logger.Error("Incomplete read response from PLC. Expected at least {0} bytes, received {1} bytes.", 30 + count * 2, bytesRead);
-                throw new FinsError(0xFF, 0xFF, $"Incomplete read response from PLC. Expected at least {30 + count * 2} bytes, received {bytesRead} bytes.");
-            }
+            // expected size calculation
+            int expectedSize = 30 + count * 2;
+            byte[] buffer = new byte[expectedSize];
 
-            // Check for errors 
-            CheckAndThrowErrors(buffer);
+            int bytesRead = await _connection.TransceiveAsync(command, buffer);
+            ValidateResponse(buffer, bytesRead, expectedSize);
 
-            // Data parsing
             short[] reData = new short[count];
             for (int i = 0; i < count; i++)
             {
@@ -305,51 +197,71 @@ namespace OmronFinsNetStandard
             return reData;
         }
 
-        /// <summary>
-        /// Writes multiple words to the PLC asynchronously.
-        /// </summary>
-        /// <param name="memory">The PLC memory area to write to.</param>
-        /// <param name="address">The starting address.</param>
-        /// <param name="data">The data to write.</param>
-        /// <returns>A task that represents the asynchronous write operation.</returns>
-        /// <exception cref="FinsError">Thrown when the PLC returns an error.</exception>
         public async Task WriteWordsAsync(PlcMemory memory, ushort address, short[] data)
         {
+            var nodes = GetNodes();
             byte[] wdata = new byte[data.Length * 2];
             for (int i = 0; i < data.Length; i++)
             {
                 byte[] temp = BitConverter.GetBytes(data[i]);
-                wdata[i * 2] = temp[1]; // High byte first
-                wdata[i * 2 + 1] = temp[0]; // Low byte
+                wdata[i * 2] = temp[1];
+                wdata[i * 2 + 1] = temp[0];
             }
 
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Word, (short)address, 0, (short)data.Length);
+            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Word, (short)address, 0, (short)data.Length, nodes.plc,
+                nodes.pc);
             byte[] fullCommand = new byte[command.Length + wdata.Length];
             Buffer.BlockCopy(command, 0, fullCommand, 0, command.Length);
             Buffer.BlockCopy(wdata, 0, fullCommand, command.Length, wdata.Length);
 
-            await BasicClass.SendDataAsync(fullCommand);
-
             byte[] buffer = new byte[30];
-            int bytesRead = await BasicClass.ReceiveDataAsync(buffer);
-            if (bytesRead < 30)
-            {
-                Logger.Error("Incomplete write response from PLC. Expected at least 30 bytes, received {0} bytes.", bytesRead);
-                throw new FinsError(0xFF, 0xFF, $"Incomplete write response from PLC. Expected at least 30 bytes, received {bytesRead} bytes.");
-            }
-
-            // Check for errors
-            CheckAndThrowErrors(buffer);
+            int bytesRead = await _connection.TransceiveAsync(fullCommand, buffer);
+            ValidateResponse(buffer, bytesRead, 30);
         }
 
+        private void ValidateResponse(byte[] buffer, int bytesRead, int minExpected)
+        {
+            // 1. Check strict buffer size
+            // Note: If a TCP Head Error occurs, the response is usually just 16 bytes, 
+            // regardless of what we expected for a full read command.
+            if (bytesRead < 16)
+            {
+                throw new FinsError(0xFF, 0xFF, $"Response too short. Received {bytesRead} bytes.");
+            }
 
+            // 2. Check FINS/TCP Wrapper Error (Offset 15)
+            // This is the "Head error without sub code" scenario you mentioned.
+            FinsError? tcpError = ErrorCode.CheckTcpError(buffer[15]);
+            if (tcpError != null)
+            {
+                Logger.Error($"TCP Wrapper Error: {tcpError.Message}");
+                throw tcpError;
+            }
 
-        /// <summary>
-        /// Releases all resources used by the <see cref="EthernetPlcClient"/>.
-        /// </summary>
+            // 3. If TCP header is OK, check if we received enough data for the FINS frame
+            if (bytesRead < minExpected)
+            {
+                throw new FinsError(0xFF, 0xFF, $"Incomplete FINS frame. Expected {minExpected}, got {bytesRead} bytes.");
+            }
+
+            // 4. Check FINS End Code (MRES/SRES at offset 28, 29 for standard frames)
+            // Note: The offsets depend on your buffer structure. 
+            // Usually: TCP Header (16) + FINS Header (10) + Command Code (2) = 28 bytes offset to MRES
+            FinsError endError = ErrorCode.CheckEndCode(buffer[28], buffer[29]);
+            if (endError != null && !endError.CanContinue)
+            {
+                Logger.Error($"FINS Logic Error: {endError.Message}");
+                throw endError;
+            }
+        }
+
         public void Dispose()
         {
-            BasicClass.Disconnect();
+            // Fire and forget close logic to ensure release
+            if (!_isDisposed)
+            {
+                CloseAsync().Wait();
+            }
         }
     }
 }
