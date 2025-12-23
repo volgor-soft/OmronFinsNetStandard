@@ -10,14 +10,14 @@
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Connecting to the PLC](#connecting-to-the-plc)
-  - [Reading Bits](#reading-bits)
-  - [Reading Words](#reading-words)
-  - [Reading Real Values](#reading-real-values)
-  - [Exception Handling (FinsError)](#exception-handling-finserror)
-  - [Closing the Connection](#closing-the-connection)
+    - [Connecting to the PLC](#connecting-to-the-plc)
+    - [Reading & Writing Bits](#reading--writing-bits)
+    - [Reading & Writing Words](#reading--writing-words)
+    - [Reading Real Values](#reading-real-values)
+    - [Exception Handling (FinsError)](#exception-handling-finserror)
+    - [Closing the Connection](#closing-the-connection)
 - [Logging](#logging)
-  - [Enabling Logs in NLog](#enabling-logs-in-nlog)
+    - [Enabling Logs in NLog](#enabling-logs-in-nlog)
 - [API Reference](#api-reference)
 - [Contributing](#contributing)
 - [License](#license)
@@ -25,14 +25,25 @@
 
 ## Introduction
 
-**OmronFinsNetStandard** is a .NET Standard library that provides a straightforward and reliable way to communicate with Omron PLCs using the FINS (Factory Interface Network Service) protocol over Ethernet. Whether you're building industrial automation solutions, integrating PLC data into your software, or performing diagnostics, this library streamlines common tasks such as connecting, reading, and writing to Omron PLC memory areas.
+**OmronFinsNetStandard** is a .NET Standard library that provides a straightforward and reliable way to communicate with
+Omron PLCs using the FINS (Factory Interface Network Service) protocol over Ethernet (TCP).
+
+Designed for robust industrial applications, this library simplifies complex tasks such as connection management,
+handshake protocols, and memory access (Read/Write). It serves as a bridge between your .NET software and Omron PLCs,
+suitable for HMI development, data logging, or system integration.
 
 ## Features
 
-- **Asynchronous Operations:** Perform non-blocking I/O operations when interacting with the PLC.
-- **Robust Error Handling:** The library throws `FinsError` exceptions when communication issues or PLC-side errors occur, allowing you to handle these gracefully.
-- **Logging with NLog:** Integrated logging uses the popular NLog framework for diagnostics and audit trails.
-- **Dependency Injection-Friendly:** Easily integrate into DI containers for more modular and testable code.
+- **🚀 Connection Pooling:** (New!) Automatically manages physical TCP connections. Multiple parts of your application
+  can create client instances pointing to the same PLC without opening redundant sockets or causing conflicts.
+- **🔒 Thread Safety:** Built-in synchronization ensures that concurrent read/write operations from different threads are
+  queued and executed safely, preventing data corruption.
+- **⚡ Asynchronous Operations:** Fully `async/await` compatible to keep your UI or control loops responsive during
+  network I/O.
+- **🛡️ Robust Error Handling:** Distinguishes between TCP transport errors and FINS protocol errors, providing detailed
+  `FinsError` codes for easy troubleshooting.
+- **📝 Logging with NLog:** Integrated logging allows for deep diagnostics of connection flows and data exchange.
+- **🧩 Dependency Injection-Friendly:** Lightweight client classes are perfect for DI containers and unit testing.
 
 ## Installation
 
@@ -52,24 +63,32 @@ Install-Package OmronFinsNetStandard
 
 ### Connecting to the PLC
 
+The library handles the FINS handshake automatically. Thanks to the internal connection manager, you can instantiate
+clients wherever needed.
+
 ```csharp
 using OmronFinsNetStandard;
 
-var client = new EthernetPlcClient();
-// Attempt to connect to the PLC at the given IP and port
-bool isConnected = await client.ConnectAsync("192.168.1.10", 9600, timeout: 3000);
+// You can create a new instance for every operation if needed; 
+// the physical connection is reused under the hood.
+using (var client = new EthernetPlcClient())
+{
+    // Attempt to connect to the PLC at the given IP and port
+    // If a connection to 192.168.1.10 already exists, it will be reused.
+    bool isConnected = await client.ConnectAsync("192.168.1.10", 9600, timeout: 3000);
 
-if (isConnected)
-{
-    Console.WriteLine("Successfully connected to the PLC.");
-}
-else
-{
-    Console.WriteLine("Failed to connect to the PLC.");
+    if (isConnected)
+    {
+        Console.WriteLine("Ready to communicate.");
+    }
+    else
+    {
+        Console.WriteLine("Failed to connect.");
+    }
 }
 ```
 
-### Reading Bits
+### Reading & Writing Bits
 
 ```csharp
 using OmronFinsNetStandard.Enums;
@@ -77,80 +96,109 @@ using OmronFinsNetStandard.Enums;
 PlcMemory memory = PlcMemory.DM;
 string bitAddress = "100.5"; // Format: "Word.Bit"
 
-// Reading the state of a single bit
+// 1. Reading a Bit
 try
 {
     short bitState = await client.GetBitStateAsync(memory, bitAddress);
-    Console.WriteLine($"Bit State at DM100.5: {bitState}");
+    Console.WriteLine($"Bit State at {memory}{bitAddress}: {bitState}");
 }
 catch (FinsError ex)
 {
-    Console.WriteLine($"Failed to read bit state: {ex.Message}");
+    Console.WriteLine($"Read failed: {ex.Message}");
+}
+
+// 2. Writing a Bit
+try
+{
+    // Set the bit to ON (1)
+    await client.SetBitStateAsync(memory, bitAddress, BitState.On);
+    Console.WriteLine($"Set {bitAddress} to ON.");
+}
+catch (FinsError ex)
+{
+    Console.WriteLine($"Write failed: {ex.Message}");
 }
 ```
 
-### Reading Words
+### Reading & Writing Words
 
 ```csharp
 using OmronFinsNetStandard.Enums;
 
 PlcMemory memory = PlcMemory.DM;
 ushort startAddress = 200; 
-ushort wordCount = 3; // Number of words to read
+ushort count = 5;
 
+// 1. Reading Words
 try
 {
-    short[] words = await client.ReadWordsAsync(memory, startAddress, wordCount);
-    Console.WriteLine("Read words from DM200:");
-    foreach (var word in words)
-    {
-        Console.WriteLine(word);
-    }
+    short[] data = await client.ReadWordsAsync(memory, startAddress, count);
+    Console.WriteLine($"Read {count} words from {memory}{startAddress}:");
+    Console.WriteLine(string.Join(", ", data));
 }
 catch (FinsError ex)
 {
-    // Handle PLC communication errors gracefully
-    Console.WriteLine($"Error reading words: MainCode={ex.MainCode}, SubCode={ex.SubCode}, Message={ex.Message}");
+    Console.WriteLine($"Error reading words: {ex.Message}");
+}
+
+// 2. Writing Words
+try
+{
+    short[] writeData = new short[] { 123, 456, 789 };
+    await client.WriteWordsAsync(memory, startAddress, writeData);
+    Console.WriteLine("Data written successfully.");
+}
+catch (FinsError ex)
+{
+    Console.WriteLine($"Error writing words: {ex.Message}");
 }
 ```
 
 ### Reading Real Values
 
+The library handles the conversion of 2 consecutive words into a standard float (Real).
+
 ```csharp
 using OmronFinsNetStandard.Enums;
 
-PlcMemory memory = PlcMemory.DM;
-ushort realAddress = 300; 
-// Each float is 2 words, so ensure you read the correct range
+ushort address = 300; // Reads words 300 and 301
 
 try
 {
-    float realValue = await client.ReadRealAsync(memory, realAddress);
-    Console.WriteLine($"Real Value at DM300: {realValue}");
+    float value = await client.ReadRealAsync(PlcMemory.DM, address);
+    Console.WriteLine($"Real Value at DM{address}: {value}");
 }
 catch (FinsError ex)
 {
-    Console.WriteLine($"Error reading real value: {ex.Message}");
+    Console.WriteLine($"Error: {ex.Message}");
 }
 ```
 
 ### Exception Handling (FinsError)
 
-Because network issues, PLC configuration problems, and other factors can cause read/write operations to fail, the library throws `FinsError` exceptions. These exceptions provide detailed error codes and messages.
-
-**Example:**
+The library throws `FinsError` exceptions for both network-level issues and PLC-level errors (e.g., protected memory,
+address out of range).
 
 ```csharp
 try
 {
-    short[] data = await client.ReadWordsAsync(PlcMemory.DM, 0, 10);
-    Console.WriteLine("Data read successfully.");
+    // Intentionally reading from an invalid address
+    await client.ReadWordsAsync(PlcMemory.CIO, 9999, 1);
 }
 catch (FinsError ex)
 {
-    Console.WriteLine($"A FinsError occurred! Message: {ex.Message}");
-    Console.WriteLine($"MainCode: {ex.MainCode}, SubCode: {ex.SubCode}");
-    Console.WriteLine("Consider checking the PLC configuration or network connectivity.");
+    Console.WriteLine($"❌ Error Occurred!");
+    Console.WriteLine($"Message: {ex.Message}");
+    Console.WriteLine($"MainCode: 0x{ex.MainCode:X2}, SubCode: 0x{ex.SubCode:X2}");
+    
+    if (ex.CanContinue)
+    {
+        Console.WriteLine("Warning: Operation failed, but connection is still valid.");
+    }
+    else
+    {
+        Console.WriteLine("Critical Error: Connection might be compromised.");
+    }
 }
 ```
 
@@ -158,101 +206,61 @@ catch (FinsError ex)
 
 ```csharp
 await client.CloseAsync();
-Console.WriteLine("Disconnected from the PLC.");
+// or simply use 'using' statement as shown in the connection example.
 ```
 
 ## Logging
-
-**OmronFinsNetStandard** uses [NLog](https://nlog-project.org/) to record diagnostic information, errors, and other events. If you wish to see logs in your application, you must configure NLog accordingly.
+**OmronFinsNetStandard** uses **NLog** to record diagnostic information. This is extremely useful for debugging FINS handshake issues or tracking data flow.
 
 ### Enabling Logs in NLog
-
-1. Add an `NLog.config` file to your application (or integrate into an existing NLog configuration).
-2. Include a rule that captures logs from all namespaces (or specifically `OmronFinsNetStandard`) so that library logs are recorded.
-
-**Example NLog.config:**
+To enable logging, configure NLog in your application. Below is a sample configuration that logs to a file:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
-<nlog xmlns="http://www.nlog-project.org/schemas/NLog.xsd"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<nlog xmlns="[http://www.nlog-project.org/schemas/NLog.xsd](http://www.nlog-project.org/schemas/NLog.xsd)"
+      xmlns:xsi="[http://www.w3.org/2001/XMLSchema-instance](http://www.w3.org/2001/XMLSchema-instance)">
   <targets>
-    <!-- Write logs to a file -->
-    <target xsi:type="File" name="file" fileName="logs/logfile.log"
-            layout="${longdate} ${uppercase:${level}} ${message} ${exception:format=toString}" />
+    <target xsi:type="Console" name="console" 
+            layout="${time} | ${level:uppercase=true} | ${logger} | ${message} ${exception:format=tostring}" />
+    <target xsi:type="File" name="file" fileName="logs/plc_comm.log" 
+            layout="${longdate}|${level}|${message}|${exception}" />
   </targets>
 
   <rules>
-    <!-- Capture all logs at Info level and above -->
-    <logger name="*" minlevel="Info" writeTo="file" />
+    <logger name="OmronFinsNetStandard.*" minlevel="Debug" writeTo="console,file" />
   </rules>
 </nlog>
 ```
 
-**Important:** Make sure the `NLog.config` file is included in your project output (e.g., by setting `Copy to Output Directory` to `Copy if newer` in Visual Studio). Without proper configuration, you will not see any log output from this library.
-
 ## API Reference
 
 ### EthernetPlcClient
+- `ConnectAsync(string ipAddress, int port = 9600, int timeout = 5000)`: Establishes or reuses a thread-safe connection. Handles Ping and FINS Handshake.
+- `CloseAsync()`: Decrements the usage counter for the connection; closes the socket if usage is zero.
+- `ReadWordsAsync`/`WriteWordsAsync`: Bulk read/write operations for 16-bit integers.
+- `GetBitStateAsync`/`SetBitStateAsync`: Read/write single bits.
+- `ReadRealAsync`: Read 32-bit floating-point
 
-**Constructor:**
-```csharp
-public EthernetPlcClient()
-```
-
-**Key Methods:**
-- `Task<bool> ConnectAsync(string ipAddress, int port, int timeout)`  
-  Connects to the PLC asynchronously.
-  
-- `Task<short> GetBitStateAsync(PlcMemory memory, string address)`  
-  Reads the state of a specific bit from the PLC.
-
-- `Task<short[]> ReadWordsAsync(PlcMemory memory, ushort address, ushort count)`  
-  Reads multiple words from the PLC.
-
-- `Task<float> ReadRealAsync(PlcMemory memory, ushort address)`  
-  Reads a real (float) value from the PLC.
-
-- `Task CloseAsync()`  
-  Closes the connection to the PLC.
-
-- `void Dispose()`  
-  Disposes resources used by the client.
-
-### FinsError
-
-`FinsError` is a custom exception that provides detailed information on PLC communication errors.
-
-**Properties:**
-- `byte MainCode`  
-  The main error code returned by the PLC.
-  
-- `byte SubCode`  
-  The sub error code for more granular error details.
-
-- `bool CanContinue`  
-  Indicates whether communication can continue after this error.
-
-- `override string Message`  
-  A descriptive error message.
+### PlcMemory (Enum)
+Supported memory areas:
+- `DM`: Data Memory
+- `CIO`: CIO Memory (Core I/O)
+- `WR`: Work Memory (Work Area)
+- `HR`: Holding Relay (Holding Registers)
+- `AR`: Auxiliary Relay (Auxiliary Area)
 
 ## Contributing
-
-Contributions, bug reports, and feature requests are welcome. To contribute:
-
-1. **Fork the repository** on GitHub.
-2. **Create a feature branch** for your changes.
-3. **Commit and push your changes**.
-4. **Open a Pull Request** and describe the changes and their rationale.
+Contributions are welcome! Please follow these steps:
+1. Fork the repository.
+2. Create a new branch (`git checkout -b feature/YourFeature`).
+3. Commit your changes (`git commit -m 'Add some feature'`).
+4. Push to the branch (`git push origin feature/YourFeature`).
+5. Open a Pull Request.
 
 ## License
-
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## Contact
+For questions or support, please open an issue on GitHub.
 
-For questions, suggestions, or issues, please open an [issue on GitHub](https://github.com/volkovskey/OmronFinsNetStandard).
-
----
-
-*Happy coding!*
+Happy coding! 🚀
