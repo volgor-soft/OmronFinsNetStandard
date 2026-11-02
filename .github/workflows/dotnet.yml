@@ -10,6 +10,9 @@ on:
 jobs:
   Build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for NuGet Trusted Publishing (OIDC)
     defaults:
       run:
         working-directory: OmronFinsNetStandard
@@ -25,6 +28,11 @@ jobs:
       run: dotnet publish --no-restore -c Release
     - name: Pack
       run: dotnet pack --output nupkgs
+    - name: NuGet login (Trusted Publishing)
+      uses: NuGet/login@v1
+      id: nuget-login
+      with:
+        user: volkovskey
     - name: upload nuget package
-      run: dotnet nuget push nupkgs/*.nupkg -k ${{ secrets.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push nupkgs/*.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
