@@ -11,7 +11,7 @@
 
     <PropertyGroup>
         <PackageId>OmronFinsNetStandard</PackageId>
-        <PackageVersion>2.0.0</PackageVersion>
+        <PackageVersion>2.0.1</PackageVersion>
         <Authors>volkovskey</Authors>
         <Company>volkovskey</Company>
         <Description>An asynchronous Omron FINS communication library for .NET Standard with connection pooling and thread safety.</Description>
@@ -21,14 +21,13 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <ApplicationIcon>Icons\icon.ico</ApplicationIcon>
 
-        <AssemblyVersion>2.0.0.0</AssemblyVersion>
-        <FileVersion>2.0.0.0</FileVersion>
+        <AssemblyVersion>2.0.1.0</AssemblyVersion>
+        <FileVersion>2.0.1.0</FileVersion>
 
         <PackageReleaseNotes>
-            - Implemented Connection Pooling: Reuses physical TCP connections for better performance.
-            - Added Thread Safety: Safe concurrent access from multiple threads.
-            - Improved Error Handling: Better distinction between TCP transport errors and FINS protocol errors.
-            - Refactored internal architecture while maintaining API compatibility.
+            - Reconnects on a new socket after the PLC drops the connection, instead of failing with WSAEISCONN (10056) until the process restarts.
+            - Repeats the FINS handshake after a reconnect.
+            - Fails a command after 5 s without an answer instead of waiting forever.
         </PackageReleaseNotes>
     </PropertyGroup>
 
