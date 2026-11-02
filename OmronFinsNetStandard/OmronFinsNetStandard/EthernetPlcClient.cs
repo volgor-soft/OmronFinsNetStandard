@@ -32,9 +32,8 @@ namespace OmronFinsNetStandard
 
             try
             {
-                // 2. Establish physical connection if not already connected
-                // Note: If another thread connected it 1ms ago, this returns true immediately.
-                bool connected = await _connection.ConnectPhysicalAsync(timeout);
+                // 2. Open the socket and perform the FINS handshake, unless another client already did.
+                bool connected = await _connection.ConnectAsync(timeout);
                 if (!connected)
                 {
                     // Failed to connect physically. Release the reference we just took.
@@ -43,40 +42,6 @@ namespace OmronFinsNetStandard
                     throw new FinsCommunicationException($"Could not establish physical connection to {ipAddress}");
                 }
 
-                // 3. Handshake Logic
-                // IMPORTANT: We only do handshake if we haven't determined Nodes yet.
-                // Or if we want to ensure FINS level is up. 
-                // Since this is a shared connection, we check if Nodes are already set (meaning handshake was done).
-
-                if (_connection.PCNode != 0 && _connection.PLCNode != 0)
-                {
-                    Logger.Debug("Connection reused. Skipping Handshake. Nodes: PC={0}, PLC={1}", _connection.PCNode, _connection.PLCNode);
-                    return true;
-                }
-
-                // Perform Handshake inside the Lock
-                // We construct a specific specialized lock usage or use Transceive
-                Logger.Debug("Performing FINS Handshake...");
-
-                // We use TransceiveAsync to ensure atomic send/receive on the shared socket
-                byte[] responseBuffer = new byte[24];
-                int bytesRead = await _connection.TransceiveAsync(FinsCommandBuilder.HandShake(), responseBuffer);
-
-                if (bytesRead < 24)
-                {
-                    throw new FinsError(0xFF, 0xFF, "Incomplete handshake response.");
-                }
-
-                if (responseBuffer[15] != 0)
-                {
-                    throw new FinsError(responseBuffer[15], responseBuffer[16], "Handshake failed.");
-                }
-
-                // Set nodes on the shared connection object
-                _connection.PCNode = responseBuffer[19];
-                _connection.PLCNode = responseBuffer[23];
-
-                Logger.Info("Handshake successful. Nodes set: PC={0}, PLC={1}", _connection.PCNode, _connection.PLCNode);
                 return true;
             }
             catch (Exception ex)
@@ -107,12 +72,11 @@ namespace OmronFinsNetStandard
         }
 
         // --- Data Operations ---
-        // Helper to get nodes for command builder
-        private (byte pc, byte plc) GetNodes()
+        // The connection builds each command with the nodes of the socket it goes out on.
+        private Task<int> TransceiveAsync(Func<byte, byte, byte[]> buildCommand, byte[] buffer)
         {
-            if (_connection == null || !_connection.IsConnected)
-                throw new InvalidOperationException("Client is not connected.");
-            return (_connection.PCNode, _connection.PLCNode);
+            FinsConnection connection = _connection ?? throw new InvalidOperationException("Client is not connected.");
+            return connection.TransceiveAsync(buildCommand, buffer);
         }
 
         public async Task<short> ReadWordAsync(PlcMemory memory, ushort address)
@@ -128,14 +92,13 @@ namespace OmronFinsNetStandard
 
         public async Task<short> GetBitStateAsync(PlcMemory memory, string address)
         {
-            var nodes = GetNodes();
             short cnInt = short.Parse(address.Split('.')[0]);
             short cnBit = short.Parse(address.Split('.')[1]);
 
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Bit, cnInt, cnBit, 1, nodes.plc, nodes.pc);
             byte[] buffer = new byte[31];
 
-            int bytesRead = await _connection.TransceiveAsync(command, buffer);
+            int bytesRead = await TransceiveAsync(
+                (plc, pc) => FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Bit, cnInt, cnBit, 1, plc, pc), buffer);
 
             ValidateResponse(buffer, bytesRead, 31);
 
@@ -144,30 +107,30 @@ namespace OmronFinsNetStandard
 
         public async Task SetBitStateAsync(PlcMemory memory, string address, BitState state)
         {
-            var nodes = GetNodes();
             short cnInt = short.Parse(address.Split('.')[0]);
             short cnBit = short.Parse(address.Split('.')[1]);
 
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Bit, cnInt, cnBit, 1, nodes.plc, nodes.pc);
-
-            // Append data (BitState)
-            byte[] fullCommand = new byte[command.Length + 1];
-            Buffer.BlockCopy(command, 0, fullCommand, 0, command.Length);
-            fullCommand[command.Length] = (byte)state;
-
             byte[] buffer = new byte[30];
-            int bytesRead = await _connection.TransceiveAsync(fullCommand, buffer);
+            int bytesRead = await TransceiveAsync((plc, pc) =>
+            {
+                byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Bit, cnInt, cnBit, 1, plc, pc);
+
+                // Append data (BitState)
+                byte[] fullCommand = new byte[command.Length + 1];
+                Buffer.BlockCopy(command, 0, fullCommand, 0, command.Length);
+                fullCommand[command.Length] = (byte)state;
+                return fullCommand;
+            }, buffer);
 
             ValidateResponse(buffer, bytesRead, 30);
         }
 
         public async Task<float> ReadRealAsync(PlcMemory memory, ushort address)
         {
-            var nodes = GetNodes();
             byte[] buffer = new byte[34];
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, 2, nodes.plc, nodes.pc);
 
-            int bytesRead = await _connection.TransceiveAsync(command, buffer);
+            int bytesRead = await TransceiveAsync(
+                (plc, pc) => FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, 2, plc, pc), buffer);
             ValidateResponse(buffer, bytesRead, 34);
 
             byte[] temp = new byte[] { buffer[31], buffer[30], buffer[33], buffer[32] };
@@ -176,15 +139,13 @@ namespace OmronFinsNetStandard
 
         public async Task<short[]> ReadWordsAsync(PlcMemory memory, ushort address, ushort count)
         {
-            var nodes = GetNodes();
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, (short)count, nodes.plc,
-                nodes.pc);
-
             // expected size calculation
             int expectedSize = 30 + count * 2;
             byte[] buffer = new byte[expectedSize];
 
-            int bytesRead = await _connection.TransceiveAsync(command, buffer);
+            int bytesRead = await TransceiveAsync(
+                (plc, pc) => FinsCommandBuilder.FinsCmd(ReadOrWrite.Read, memory, MemoryType.Word, (short)address, 0, (short)count, plc, pc),
+                buffer);
             ValidateResponse(buffer, bytesRead, expectedSize);
 
             short[] reData = new short[count];
@@ -199,7 +160,6 @@ namespace OmronFinsNetStandard
 
         public async Task WriteWordsAsync(PlcMemory memory, ushort address, short[] data)
         {
-            var nodes = GetNodes();
             byte[] wdata = new byte[data.Length * 2];
             for (int i = 0; i < data.Length; i++)
             {
@@ -208,14 +168,16 @@ namespace OmronFinsNetStandard
                 wdata[i * 2 + 1] = temp[0];
             }
 
-            byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Word, (short)address, 0, (short)data.Length, nodes.plc,
-                nodes.pc);
-            byte[] fullCommand = new byte[command.Length + wdata.Length];
-            Buffer.BlockCopy(command, 0, fullCommand, 0, command.Length);
-            Buffer.BlockCopy(wdata, 0, fullCommand, command.Length, wdata.Length);
-
             byte[] buffer = new byte[30];
-            int bytesRead = await _connection.TransceiveAsync(fullCommand, buffer);
+            int bytesRead = await TransceiveAsync((plc, pc) =>
+            {
+                byte[] command = FinsCommandBuilder.FinsCmd(ReadOrWrite.Write, memory, MemoryType.Word, (short)address, 0, (short)data.Length,
+                    plc, pc);
+                byte[] fullCommand = new byte[command.Length + wdata.Length];
+                Buffer.BlockCopy(command, 0, fullCommand, 0, command.Length);
+                Buffer.BlockCopy(wdata, 0, fullCommand, command.Length, wdata.Length);
+                return fullCommand;
+            }, buffer);
             ValidateResponse(buffer, bytesRead, 30);
         }
 
